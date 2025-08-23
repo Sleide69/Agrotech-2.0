@@ -1,0 +1,6 @@
+@ExportModule_HostAddress = http://localhost:5197
+
+GET {{ExportModule_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

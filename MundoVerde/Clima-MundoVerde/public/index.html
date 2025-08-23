@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌱 Prueba WebSocket - Clima Mundo Verde</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            height: calc(100vh - 40px);
+        }
+        
+        .panel {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            grid-column: 1 / -1;
+            text-align: center;
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            color: #4a5568;
+            font-size: 2.2em;
+            margin-bottom: 10px;
+        }
+        
+        .section-title {
+            font-size: 1.3em;
+            color: #2d3748;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border-bottom: 2px solid #e2e8f0;
+            padding-bottom: 10px;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .status-connected {
+            background: #c6f6d5;
+            color: #22543d;
+            border: 2px solid #38a169;
+        }
+        
+        .status-disconnected {
+            background: #fed7d7;
+            color: #742a2a;
+            border: 2px solid #e53e3e;
+        }
+        
+        .button-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .btn {
+            padding: 12px 18px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn-primary { background: #4299e1; color: white; }
+        .btn-success { background: #48bb78; color: white; }
+        .btn-warning { background: #ed8936; color: white; }
+        .btn-danger { background: #f56565; color: white; }
+        .btn-info { background: #38b2ac; color: white; }
+        .btn-secondary { background: #a0aec0; color: white; }
+        
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            align-items: center;
+        }
+        
+        .input-group input {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        
+        .input-group input:focus {
+            outline: none;
+            border-color: #4299e1;
+            box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.1);
+        }
+        
+        .log-container {
+            flex: 1;
+            background: #1a202c;
+            border-radius: 10px;
+            padding: 15px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 6px 10px;
+            border-radius: 4px;
+            border-left: 4px solid transparent;
+        }
+        
+        .log-system { 
+            color: #63b3ed; 
+            border-left-color: #4299e1;
+            background: rgba(66, 153, 225, 0.1);
+        }
+        
+        .log-success { 
+            color: #68d391; 
+            border-left-color: #48bb78;
+            background: rgba(72, 187, 120, 0.1);
+        }
+        
+        .log-warning { 
+            color: #fbb13c; 
+            border-left-color: #ed8936;
+            background: rgba(237, 137, 54, 0.1);
+        }
+        
+        .log-error { 
+            color: #fc8181; 
+            border-left-color: #f56565;
+            background: rgba(245, 101, 101, 0.1);
+        }
+        
+        .log-weather { 
+            color: #81e6d9; 
+            border-left-color: #38b2ac;
+            background: rgba(56, 178, 172, 0.1);
+        }
+        
+        .timestamp {
+            color: #a0aec0;
+            font-size: 11px;
+        }
+        
+        .subscriptions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .subscription-status {
+            font-size: 12px;
+            color: #4a5568;
+            font-style: italic;
+        }
+        
+        @media (max-width: 1200px) {
+            .container {
+                grid-template-columns: 1fr;
+                gap: 15px;
+            }
+        }
+        
+        .weather-data {
+            background: #f7fafc;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .weather-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .weather-item {
+            text-align: center;
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+        }
+        
+        .weather-label {
+            font-size: 11px;
+            color: #718096;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        
+        .weather-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: #2d3748;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🌱 Prueba WebSocket - Clima Mundo Verde</h1>
+    </div>
+    
+    <div class="container">
+        <!-- Panel Izquierdo -->
+        <div class="panel">
+            <!-- Estado de Conexión -->
+            <div class="section-title">
+                📶 Estado de Conexión
+            </div>
+            
+            <div id="connectionStatus" class="status-indicator status-disconnected">
+                <span>🔴</span>
+                <span>Desconectado</span>
+            </div>
+            
+            <div class="button-group">
+                <button class="btn btn-primary" onclick="connectWebSocket()" id="connectBtn">
+                    🔌 Conectar
+                </button>
+                <button class="btn btn-secondary" onclick="disconnectWebSocket()" id="disconnectBtn" disabled>
+                    ⚡ Desconectar
+                </button>
+            </div>
+            
+            <!-- Suscripciones -->
+            <div class="section-title">
+                📡 Suscripciones
+            </div>
+            
+            <div class="subscriptions">
+                <button class="btn btn-info" onclick="subscribeToClima()" id="climaSubBtn" disabled>
+                    🌤️ Suscribirse a Clima
+                </button>
+                <div class="subscription-status" id="climaSubStatus">No suscrito</div>
+                
+                <button class="btn btn-success" onclick="subscribeToCultivos()" id="cultivosSubBtn" disabled>
+                    🌱 Suscribirse a Cultivos
+                </button>
+                <div class="subscription-status" id="cultivosSubStatus">No suscrito</div>
+                
+                <button class="btn btn-warning" onclick="subscribeToDashboard()" id="dashboardSubBtn" disabled>
+                    📊 Suscribirse a Dashboard
+                </button>
+                <div class="subscription-status" id="dashboardSubStatus">No suscrito</div>
+            </div>
+        </div>
+        
+        <!-- Panel Derecho -->
+        <div class="panel">
+            <!-- Pruebas de API -->
+            <div class="section-title">
+                🧪 Pruebas de API
+            </div>
+            
+            <div class="input-group">
+                <input type="text" id="cityInput" placeholder="Ingresa una ciudad..." value="Madrid">
+                <button class="btn btn-primary" onclick="consultarClima()" id="climaBtn">
+                    🌍 Consultar Clima
+                </button>
+            </div>
+            
+            <div class="button-group">
+                <button class="btn btn-danger" onclick="simularAlertaCritica()" id="alertBtn">
+                    ⚠️ Simular Alerta Crítica
+                </button>
+                <button class="btn btn-info" onclick="simularEventoCultivos()" id="cultivosBtn">
+                    🌾 Simular Evento Cultivos
+                </button>
+            </div>
+            
+            <!-- Datos del Clima -->
+            <div id="weatherDisplay" class="weather-data" style="display: none;">
+                <h4>📊 Últimos Datos Climáticos</h4>
+                <div id="weatherGrid" class="weather-grid">
+                </div>
+            </div>
+        </div>
+        
+        <!-- Log de Eventos (Span completo) -->
+        <div class="panel" style="grid-column: 1 / -1;">
+            <div class="section-title">
+                📝 Log de Eventos en Tiempo Real
+                <button class="btn btn-secondary" onclick="clearLog()" style="margin-left: auto;">
+                    🗑️ Limpiar Log
+                </button>
+            </div>
+            
+            <div class="log-container" id="logContainer">
+                <!-- Los logs aparecerán aquí -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let isConnected = false;
+        let subscriptions = {
+            clima: false,
+            cultivos: false,
+            dashboard: false
+        };
+
+        // === FUNCIONES DE LOG ===
+        function addLog(message, type = 'system') {
+            const logContainer = document.getElementById('logContainer');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('logContainer').innerHTML = '';
+            addLog('🗑️ Log limpiado', 'system');
+        }
+
+        // === FUNCIONES DE CONEXIÓN ===
+        function connectWebSocket() {
+            if (isConnected) return;
+            
+            try {
+                // Conectar al WebSocket en el mismo servidor
+                socket = io(window.location.origin);
+                setupSocketEvents();
+                addLog('🔌 Intentando conectar al servidor WebSocket...', 'system');
+            } catch (error) {
+                addLog(`❌ Error al conectar: ${error.message}`, 'error');
+            }
+        }
+
+        function disconnectWebSocket() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+            updateConnectionStatus(false);
+        }
+
+        function setupSocketEvents() {
+            socket.on('connect', () => {
+                updateConnectionStatus(true);
+                addLog('✅ Conectado exitosamente al servidor WebSocket', 'success');
+            });
+
+            socket.on('disconnect', (reason) => {
+                updateConnectionStatus(false);
+                addLog(`❌ Desconectado del servidor: ${reason}`, 'error');
+            });
+
+            socket.on('connect_error', (error) => {
+                addLog(`❌ Error de conexión: ${error.message}`, 'error');
+            });
+
+            // Eventos de clima
+            socket.on('weather:updated', (data) => {
+                addLog(`🌤️ [WEBSOCKET] Actualización climática: ${data.ciudad} - ${data.temperatura}°C`, 'weather');
+                updateWeatherDisplay(data);
+            });
+
+            socket.on('weather:alert', (data) => {
+                addLog(`⚠️ [WEBSOCKET] ALERTA CLIMÁTICA: ${data.message}`, 'warning');
+            });
+
+            socket.on('weather:affects-crop', (data) => {
+                addLog(`🌱 [WEBSOCKET] Impacto en cultivos: ${data.data.recommendation}`, 'weather');
+            });
+
+            // Eventos del dashboard
+            socket.on('dashboard:real-time', (data) => {
+                addLog(`📊 [WEBSOCKET] Dashboard - ${data.module}: ${data.type}`, 'system');
+            });
+
+            // Eventos de cultivos
+            socket.on('crop:updated', (data) => {
+                addLog(`🌾 [WEBSOCKET] Actualización de cultivos: ${data.cultivo || 'N/A'}`, 'success');
+            });
+
+            socket.on('irrigation:recommendation', (data) => {
+                addLog(`💧 [WEBSOCKET] Recomendación de riego: ${data.action}`, 'weather');
+            });
+        }
+
+        function updateConnectionStatus(connected) {
+            isConnected = connected;
+            const statusEl = document.getElementById('connectionStatus');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            
+            if (connected) {
+                statusEl.className = 'status-indicator status-connected';
+                statusEl.innerHTML = '<span>🟢</span><span>Conectado</span>';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                
+                // Habilitar botones de suscripción
+                document.getElementById('climaSubBtn').disabled = false;
+                document.getElementById('cultivosSubBtn').disabled = false;
+                document.getElementById('dashboardSubBtn').disabled = false;
+            } else {
+                statusEl.className = 'status-indicator status-disconnected';
+                statusEl.innerHTML = '<span>🔴</span><span>Desconectado</span>';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                
+                // Deshabilitar botones de suscripción
+                document.getElementById('climaSubBtn').disabled = true;
+                document.getElementById('cultivosSubBtn').disabled = true;
+                document.getElementById('dashboardSubBtn').disabled = true;
+                
+                // Reset suscripciones
+                subscriptions = { clima: false, cultivos: false, dashboard: false };
+                updateSubscriptionStatus();
+            }
+        }
+
+        // === FUNCIONES DE SUSCRIPCIÓN ===
+        function subscribeToClima() {
+            if (!isConnected || subscriptions.clima) return;
+            
+            socket.emit('subscribe-weather');
+            subscriptions.clima = true;
+            updateSubscriptionStatus();
+            addLog('📡 [REAL] Suscrito a actualizaciones de clima', 'success');
+        }
+
+        function subscribeToCultivos() {
+            if (!isConnected || subscriptions.cultivos) return;
+            
+            socket.emit('subscribe-crops');
+            subscriptions.cultivos = true;
+            updateSubscriptionStatus();
+            addLog('🌱 [REAL] Suscrito a actualizaciones de cultivos', 'success');
+        }
+
+        function subscribeToDashboard() {
+            if (!isConnected || subscriptions.dashboard) return;
+            
+            socket.emit('subscribe-dashboard');
+            subscriptions.dashboard = true;
+            updateSubscriptionStatus();
+            addLog('📊 [REAL] Suscrito al dashboard general', 'success');
+        }
+
+        function updateSubscriptionStatus() {
+            document.getElementById('climaSubStatus').textContent = 
+                subscriptions.clima ? 'Suscrito ✅' : 'No suscrito';
+            document.getElementById('cultivosSubStatus').textContent = 
+                subscriptions.cultivos ? 'Suscrito ✅' : 'No suscrito';
+            document.getElementById('dashboardSubStatus').textContent = 
+                subscriptions.dashboard ? 'Suscrito ✅' : 'No suscrito';
+        }
+
+        // === FUNCIONES DE API ===
+        async function obtenerToken() {
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        usuario: 'admin',
+                        contraseña: '1234'
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem('token', data.token);
+                    addLog('✅ Token obtenido exitosamente', 'success');
+                    return data.token;
+                } else {
+                    addLog('❌ Error al obtener token', 'error');
+                    return null;
+                }
+            } catch (error) {
+                addLog(`❌ Error de red al obtener token: ${error.message}`, 'error');
+                return null;
+            }
+        }
+
+        async function consultarClima() {
+            const ciudad = document.getElementById('cityInput').value.trim();
+            const btn = document.getElementById('climaBtn');
+            
+            if (!ciudad) {
+                addLog('⚠️ Por favor, ingresa una ciudad', 'warning');
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '⏳ Consultando...';
+
+            try {
+                // Obtener token automáticamente
+                let token = localStorage.getItem('token');
+                if (!token) {
+                    addLog('🔑 Obteniendo token de autenticación...', 'system');
+                    token = await obtenerToken();
+                    if (!token) {
+                        addLog('❌ No se pudo obtener token', 'error');
+                        return;
+                    }
+                }
+
+                const response = await fetch(`/api/consulta-clima?ciudad=${encodeURIComponent(ciudad)}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addLog(`✅ Consulta API exitosa para ${ciudad}`, 'success');
+                    
+                    if (data.clima) {
+                        updateWeatherDisplay({
+                            ciudad: data.ciudad,
+                            temperatura: data.clima.temperatura,
+                            humedad: data.clima.humedad,
+                            presion: data.clima.presion,
+                            viento: data.clima.viento,
+                            descripcion: data.clima.descripcion,
+                            timestamp: new Date()
+                        });
+                    }
+                } else if (response.status === 401 || response.status === 403) {
+                    // Token expirado, obtener uno nuevo
+                    addLog('🔄 Token expirado, obteniendo uno nuevo...', 'warning');
+                    localStorage.removeItem('token');
+                    token = await obtenerToken();
+                    if (token) {
+                        // Reintentar la consulta
+                        consultarClima();
+                        return;
+                    }
+                } else {
+                    const error = await response.json();
+                    addLog(`❌ Error en consulta API: ${error.error}`, 'error');
+                }
+            } catch (error) {
+                addLog(`❌ Error de red: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🌍 Consultar Clima';
+            }
+        }
+
+        // === SIMULADORES ===
+        function simularAlertaCritica() {
+            if (!isConnected) {
+                addLog('⚠️ Conecta primero al WebSocket', 'warning');
+                return;
+            }
+
+            if (!subscriptions.clima) {
+                addLog('⚠️ Debes suscribirte a clima primero para recibir alertas', 'warning');
+                addLog('💡 Presiona "🌤️ Suscribirse a Clima" antes de simular', 'system');
+                return;
+            }
+
+            // Simular alerta crítica local
+            const alertData = {
+                ciudad: 'Phoenix',
+                temperatura: 47,
+                humedad: 15,
+                descripcion: 'Calor extremo',
+                severity: 'critical',
+                alertType: 'extreme_weather',
+                message: '⚠️ ALERTA: Temperatura extrema detectada en Phoenix',
+                timestamp: new Date()
+            };
+
+            addLog(`🚨 [SIMULADOR] Generando alerta crítica para ${alertData.ciudad}`, 'warning');
+            updateWeatherDisplay(alertData);
+            
+            setTimeout(() => {
+                addLog(`⚠️ [SIMULADOR] ALERTA CRÍTICA: ${alertData.message}`, 'error');
+            }, 1000);
+        }
+
+        function simularEventoCultivos() {
+            if (!isConnected) {
+                addLog('⚠️ Conecta primero al WebSocket', 'warning');
+                return;
+            }
+
+            if (!subscriptions.cultivos) {
+                addLog('⚠️ Debes suscribirte a cultivos primero para recibir estos eventos', 'warning');
+                addLog('💡 Presiona "🌱 Suscribirse a Cultivos" antes de simular', 'system');
+                return;
+            }
+
+            addLog('🌾 [SIMULADOR] Generando evento de cultivos...', 'system');
+            
+            setTimeout(() => {
+                addLog('🌱 [SIMULADOR] Evento de cultivos: Tomate - Fase: Floración', 'success');
+                addLog('💧 [SIMULADOR] Recomendación: riego inmediato', 'weather');
+                addLog('📊 [SIMULADOR] Dashboard: cultivos - update', 'system');
+            }, 1000);
+        }
+
+        // === DISPLAY DE DATOS ===
+        function updateWeatherDisplay(data) {
+            const display = document.getElementById('weatherDisplay');
+            const grid = document.getElementById('weatherGrid');
+            
+            grid.innerHTML = `
+                <div class="weather-item">
+                    <div class="weather-label">Ciudad</div>
+                    <div class="weather-value">${data.ciudad}</div>
+                </div>
+                <div class="weather-item">
+                    <div class="weather-label">Temperatura</div>
+                    <div class="weather-value">${data.temperatura}°C</div>
+                </div>
+                <div class="weather-item">
+                    <div class="weather-label">Humedad</div>
+                    <div class="weather-value">${data.humedad}%</div>
+                </div>
+                <div class="weather-item">
+                    <div class="weather-label">Presión</div>
+                    <div class="weather-value">${data.presion || 'N/A'} hPa</div>
+                </div>
+                <div class="weather-item">
+                    <div class="weather-label">Viento</div>
+                    <div class="weather-value">${data.viento || 'N/A'} m/s</div>
+                </div>
+                <div class="weather-item">
+                    <div class="weather-label">Descripción</div>
+                    <div class="weather-value" style="font-size: 14px;">${data.descripcion}</div>
+                </div>
+            `;
+            
+            display.style.display = 'block';
+        }
+
+        // === INICIALIZACIÓN ===
+        document.addEventListener('DOMContentLoaded', () => {
+            addLog('🌟 Sistema iniciado - Prueba WebSocket Clima MundoVerde', 'system');
+            addLog('� Suscrito a actualizaciones de clima', 'system');
+            addLog('📡 Ejemplo: Suscrito a actualizaciones de clima', 'system');
+            addLog('⚠️ Ejemplo: Simulando alerta climática...', 'warning');
+            addLog('⚠️ Ejemplo: ALERTA - Temperatura extrema detectada', 'error');
+            addLog('🌱 Ejemplo: Evento de cultivos - Tomate en floración', 'success');
+            addLog('� Ejemplo: Recomendación riego - immediate_irrigation', 'weather');
+            addLog('📊 Ejemplo: Dashboard - cross-module recommendation', 'system');
+            addLog('--- FIN DE EJEMPLOS ---', 'system');
+            addLog('', 'system');
+            addLog('� Listo para conectar. Presiona "Conectar" para eventos reales', 'success');
+            
+            // Verificar token existente
+            const existingToken = localStorage.getItem('token');
+            if (existingToken) {
+                addLog('💾 Token encontrado en localStorage', 'success');
+            }
+        });
+
+        // Permitir Enter en el input de ciudad
+        document.getElementById('cityInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                consultarClima();
+            }
+        });
+    </script>
+</body>
+</html>

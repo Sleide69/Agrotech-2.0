@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Notificaciones WebSocket</title>
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #e7f8ec;
+      padding: 20px;
+    }
+    h1 {
+      color: #218c74;
+    }
+    ul {
+      list-style-type: none;
+      padding: 0;
+    }
+    li {
+      background: white;
+      margin: 5px 0;
+      padding: 10px;
+      border-left: 5px solid #2ecc71;
+    }
+  </style>
+</head>
+<body>
+    <h2>Notificaciones en Tiempo Real</h2>
+    <ul id="notificaciones"></ul>
+
+    <script>
+        const socket = new SockJS("/ws");
+        const stompClient = Stomp.over(socket);
+
+        stompClient.connect({}, function (frame) {
+            console.log("Conectado: " + frame);
+
+            stompClient.subscribe("/topic/notificaciones", function (mensaje) {
+                const notificacion = JSON.parse(mensaje.body);
+                const lista = document.getElementById("notificaciones");
+
+                const item = document.createElement("li");
+                item.textContent = `[${notificacion.tipo}] ${notificacion.mensaje} - ${notificacion.fecha}`;
+                lista.appendChild(item);
+            });
+        });
+    </script>
+</body>
+</html>

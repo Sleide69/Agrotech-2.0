@@ -1,0 +1,30 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:17
+    container_name: CultivoManager-db
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: GestionCultivo
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "Emelec123*"
+    volumes:
+      - cultivo_pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    container_name: CultivoManager-app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/GestionCultivo
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: "Emelec123*"
+
+volumes:
+  cultivo_pgdata:

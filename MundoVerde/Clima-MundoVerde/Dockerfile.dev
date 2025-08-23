@@ -1,0 +1,34 @@
+# Dockerfile para desarrollo
+FROM node:18-alpine
+
+# Instalar dumb-init y wget para health checks
+RUN apk add --no-cache dumb-init wget
+
+# Crear directorio de trabajo
+WORKDIR /app
+
+# Crear usuario no-root para seguridad
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nodejsuser -u 1001
+
+# Copiar archivos de configuración de paquetes
+COPY package*.json ./
+COPY tsconfig.json ./
+
+# Instalar dependencias (incluyendo devDependencies para desarrollo)
+RUN npm ci
+
+# Instalar ts-node-dev globalmente para hot reload
+RUN npm install -g ts-node-dev nodemon
+
+# Copiar código fuente
+COPY --chown=nodejsuser:nodejs . .
+
+# Cambiar al usuario no-root
+USER nodejsuser
+
+# Exponer el puerto de la aplicación
+EXPOSE 3000
+
+# Comando para desarrollo con hot reload
+CMD ["dumb-init", "npm", "run", "dev"]

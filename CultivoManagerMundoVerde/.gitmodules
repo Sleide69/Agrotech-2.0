@@ -1,0 +1,3 @@
+[submodule "CultivoManager"]
+	path = CultivoManager
+	url = https://github.com/Walthergl66/CultivoManager.git

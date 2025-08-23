@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test WebSocket Agriculture</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .connected { background-color: #d4edda; color: #155724; }
+        .disconnected { background-color: #f8d7da; color: #721c24; }
+        .notification {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+            background-color: #f8f9fa;
+        }
+        .notification.high { border-left-color: #ffc107; }
+        .notification.critical { border-left-color: #dc3545; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        button.danger { background-color: #dc3545; }
+        button.danger:hover { background-color: #c82333; }
+        input, select {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .notifications-container {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <h1>🌱 Test WebSocket Agriculture System</h1>
+    
+    <div class="container">
+        <h2>Estado de Conexión</h2>
+        <div id="status" class="status disconnected">Desconectado</div>
+        <button onclick="connect()">Conectar</button>
+        <button onclick="disconnect()" class="danger">Desconectar</button>
+    </div>
+
+    <div class="container">
+        <h2>Suscripciones a Cultivos</h2>
+        <input type="text" id="cultivoId" placeholder="ID del cultivo (ej: cultivo-123)" value="cultivo-123">
+        <button onclick="subscribeToCultivo()">Suscribirse</button>
+        <button onclick="unsubscribeFromCultivo()" class="danger">Desuscribirse</button>
+        <div id="subscriptions"></div>
+    </div>
+
+    <div class="container">
+        <h2>Simulación de Eventos</h2>
+        <button onclick="simulateCultivoEvent()">Simular Nuevo Cultivo</button>
+        <button onclick="simulatePlagaEvent()">Simular Detección de Plaga</button>
+        <button onclick="simulateSensorEvent()">Simular Alerta de Sensor</button>
+        <button onclick="getSystemStats()">Obtener Estadísticas</button>
+    </div>
+
+    <div class="container">
+        <h2>Notificaciones Recibidas</h2>
+        <button onclick="clearNotifications()" class="danger">Limpiar</button>
+        <div id="notifications" class="notifications-container"></div>
+    </div>
+
+    <script>
+        let socket = null;
+        let subscriptions = new Set();
+
+        function connect() {
+            if (socket) {
+                socket.disconnect();
+            }
+
+            socket = io('http://localhost:3000', {
+                transports: ['websocket', 'polling']
+            });
+
+            // Eventos de conexión
+            socket.on('connect', () => {
+                updateStatus('Conectado', 'connected');
+                addNotification('Sistema', 'Conectado al servidor WebSocket', 'normal');
+            });
+
+            socket.on('disconnect', () => {
+                updateStatus('Desconectado', 'disconnected');
+                addNotification('Sistema', 'Desconectado del servidor', 'normal');
+            });
+
+            socket.on('connected', (data) => {
+                addNotification('Sistema', `Bienvenida: ${data.message}`, 'normal');
+            });
+
+            // Eventos de suscripción
+            socket.on('subscription_result', (result) => {
+                if (result.success) {
+                    if (result.type === 'subscribe') {
+                        subscriptions.add(result.cultivoId);
+                    } else if (result.type === 'unsubscribe') {
+                        subscriptions.delete(result.cultivoId);
+                    }
+                    updateSubscriptions();
+                }
+                addNotification('Suscripción', result.message, result.success ? 'normal' : 'high');
+            });
+
+            // Eventos de cultivos
+            socket.on('cultivation:new', (notification) => {
+                addNotification('Nuevo Cultivo', 
+                    `${notification.data.nombre} (${notification.data.tipo})`, 
+                    notification.priority);
+            });
+
+            socket.on('cultivation:updated', (notification) => {
+                addNotification('Cultivo Actualizado', 
+                    `${notification.data.nombre} - ${notification.data.estado}`, 
+                    notification.priority);
+            });
+
+            socket.on('cultivation:deleted', (notification) => {
+                addNotification('Cultivo Eliminado', 
+                    `ID: ${notification.data.id}`, 
+                    notification.priority);
+            });
+
+            // Eventos de plagas
+            socket.on('pest:detected', (notification) => {
+                addNotification('🐛 Plaga Detectada', 
+                    `${notification.data.tipo} (${notification.data.severidad}) en cultivo ${notification.data.cultivoId}`, 
+                    notification.priority);
+            });
+
+            socket.on('pest:critical', (notification) => {
+                addNotification('🚨 PLAGA CRÍTICA', 
+                    `${notification.data.tipo} - ${notification.data.descripcion}`, 
+                    'critical');
+            });
+
+            socket.on('pest:treated', (notification) => {
+                addNotification('Plaga Tratada', 
+                    `Tratamiento aplicado en cultivo ${notification.data.cultivoId}`, 
+                    notification.priority);
+            });
+
+            // Eventos de sensores
+            socket.on('sensor:data', (notification) => {
+                addNotification('Sensor', 
+                    `${notification.data.tipo}: ${notification.data.valor} ${notification.data.unidad}`, 
+                    notification.priority);
+            });
+
+            socket.on('sensor:alert', (notification) => {
+                addNotification('🌡️ Alerta de Sensor', 
+                    `Sensor ${notification.data.sensorId}: ${notification.data.valor} ${notification.data.unidad}`, 
+                    notification.priority);
+            });
+
+            // Eventos de clima
+            socket.on('clima:alert', (notification) => {
+                addNotification('☁️ Alerta Climática', 
+                    notification.data.alerta?.mensaje || 'Condiciones climáticas adversas', 
+                    'high');
+            });
+
+            // Eventos de exportación
+            socket.on('exportacion:created', (notification) => {
+                addNotification('📦 Nueva Exportación', 
+                    `Destino: ${notification.data.destino}`, 
+                    notification.priority);
+            });
+
+            // Datos iniciales
+            socket.on('cultivo:initial_data', (data) => {
+                addNotification('Datos Iniciales', 
+                    `Información cargada para cultivo ${data.cultivoId}`, 
+                    'normal');
+            });
+
+            socket.on('sensores:initial_data', (data) => {
+                addNotification('Sensores Iniciales', 
+                    `${data.sensores?.length || 0} sensores encontrados`, 
+                    'normal');
+            });
+
+            // Estadísticas del sistema
+            socket.on('system:stats', (stats) => {
+                addNotification('Estadísticas', 
+                    `Clientes conectados: ${stats.connectedClients}, Uptime: ${Math.floor(stats.uptime)}s`, 
+                    'normal');
+            });
+
+            // Ping/Pong
+            socket.on('pong', (response) => {
+                const latency = Date.now() - response.timestamp;
+                addNotification('Ping', `Latencia: ${latency}ms`, 'normal');
+            });
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+        }
+
+        function subscribeToCultivo() {
+            const cultivoId = document.getElementById('cultivoId').value;
+            if (socket && cultivoId) {
+                socket.emit('subscribe_cultivo', { cultivoId });
+            }
+        }
+
+        function unsubscribeFromCultivo() {
+            const cultivoId = document.getElementById('cultivoId').value;
+            if (socket && cultivoId) {
+                socket.emit('unsubscribe_cultivo', { cultivoId });
+            }
+        }
+
+        function getSystemStats() {
+            if (socket) {
+                socket.emit('get_system_stats');
+            }
+        }
+
+        function simulateCultivoEvent() {
+            fetch('http://localhost:3000/webhook/events', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    service: 'gestion-cultivo',
+                    eventType: 'cultivo.created',
+                    data: {
+                        id: 'cultivo-' + Date.now(),
+                        nombre: 'Tomates Cherry',
+                        tipo: 'Hortaliza',
+                        fechaPlantacion: new Date(),
+                        estado: 'plantado',
+                        ubicacion: {
+                            lat: -34.6037,
+                            lng: -58.3816
+                        }
+                    },
+                    timestamp: new Date(),
+                    id: 'event-' + Date.now()
+                })
+            });
+        }
+
+        function simulatePlagaEvent() {
+            fetch('http://localhost:3000/webhook/events', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    service: 'plaga',
+                    eventType: 'plaga.detected',
+                    data: {
+                        id: 'plaga-' + Date.now(),
+                        tipo: 'Pulgón',
+                        severidad: Math.random() > 0.5 ? 'alta' : 'critica',
+                        cultivoId: 'cultivo-123',
+                        ubicacion: {
+                            lat: -34.6037,
+                            lng: -58.3816
+                        },
+                        descripcion: 'Detección automática de pulgones en hojas superiores'
+                    },
+                    timestamp: new Date(),
+                    id: 'event-' + Date.now()
+                })
+            });
+        }
+
+        function simulateSensorEvent() {
+            fetch('http://localhost:3000/webhook/events', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    service: 'sensores',
+                    eventType: 'sensor.alert',
+                    data: {
+                        sensorId: 'sensor-' + Math.floor(Math.random() * 100),
+                        tipo: 'Humedad del Suelo',
+                        valor: Math.floor(Math.random() * 100),
+                        unidad: '%',
+                        cultivoId: 'cultivo-123',
+                        alerta: true,
+                        umbralSuperado: true
+                    },
+                    timestamp: new Date(),
+                    id: 'event-' + Date.now()
+                })
+            });
+        }
+
+        function updateStatus(text, className) {
+            const statusElement = document.getElementById('status');
+            statusElement.textContent = text;
+            statusElement.className = `status ${className}`;
+        }
+
+        function updateSubscriptions() {
+            const container = document.getElementById('subscriptions');
+            container.innerHTML = '<h4>Suscripciones activas:</h4>' + 
+                Array.from(subscriptions).map(id => `<span style="background: #e9ecef; padding: 5px; margin: 2px; border-radius: 3px;">${id}</span>`).join(' ');
+        }
+
+        function addNotification(type, message, priority) {
+            const container = document.getElementById('notifications');
+            const notification = document.createElement('div');
+            notification.className = `notification ${priority}`;
+            notification.innerHTML = `
+                <strong>${type}</strong> - ${new Date().toLocaleTimeString()}<br>
+                ${message}
+            `;
+            container.insertBefore(notification, container.firstChild);
+            
+            // Limitar a 50 notificaciones
+            while (container.children.length > 50) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        function clearNotifications() {
+            document.getElementById('notifications').innerHTML = '';
+        }
+
+        // Conectar automáticamente al cargar la página
+        window.onload = function() {
+            connect();
+        };
+    </script>
+</body>
+</html>
