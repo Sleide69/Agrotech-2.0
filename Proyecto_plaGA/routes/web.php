@@ -17,18 +17,23 @@ Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
 Route::post('/login', [AuthController::class, 'login'])->name('login.post');
 Route::get('/register', [AuthController::class, 'showRegister'])->name('register.form');
 Route::post('/register', [AuthController::class, 'register'])->name('register.post');
-Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+// Evitar colisión con la ruta API 'logout'
+Route::post('/logout', [AuthController::class, 'logout'])->name('logout.web');
 
-// 📸 Formulario de captura de imagen (vista Blade)
-Route::get('/captura', [PlagaController::class, 'mostrarFormulario'])->middleware('auth')->name('captura.form');
-Route::get('/captura-imagen', [CapturaController::class, 'mostrarFormulario'])->middleware('auth')->name('captura');
+// 📸 Captura de imagen (vistas Blade) – nombres únicos y sin duplicados
+Route::get('/captura', [PlagaController::class, 'mostrarFormulario'])
+    ->middleware('auth')
+    ->name('captura.form');
 
-Route::get('/captura-imagen', [CapturaController::class, 'mostrarFormulario'])->name('captura.imagen');
-Route::post('/captura-imagen', [CapturaController::class, 'guardarImagen'])->name('captura.imagen');
+// Formulario GET
+Route::get('/captura-imagen', [CapturaController::class, 'mostrarFormulario'])
+    ->middleware('auth')
+    ->name('captura.imagen'); // mantenemos este nombre para compatibilidad
 
-
-// 💾 Guardar imagen y procesar (formulario clásico, no API)
-Route::post('/captura-imagen', [CapturaController::class, 'guardarImagen'])->middleware('auth')->name('captura.imagen');
+// Envío POST
+Route::post('/captura-imagen', [CapturaController::class, 'guardarImagen'])
+    ->middleware('auth')
+    ->name('captura.imagen.store');
 
 
 

@@ -8,8 +8,38 @@ import { registerRoutes } from "./routes";
 import { getAllServices } from "./config";
 import { wsManager } from "./websocket";
 import { interceptorMiddleware, errorInterceptorMiddleware } from "./interceptor";
+import { buildFoodAidRouter } from './foodAidRoutes';
+import { buildIotRouter } from './iotRoutes';
+import { buildCamerasRouter } from './cameras';
+// OpenTelemetry (instrumentación mínima)
+import { diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
+import { ExpressInstrumentation } from '@opentelemetry/instrumentation-express';
+// Nota: evitamos crear Resource directamente para simplificar tipos en tsc
+import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
+import { ConsoleSpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 
 (async () => {
+// OTel setup (no-op si falla)
+try {
+  diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.ERROR);
+  const sdk = new NodeSDK({
+    resource: {
+      attributes: {
+        [SemanticResourceAttributes.SERVICE_NAME]: 'api-gateway-mundo-verde',
+      }
+    } as any,
+    instrumentations: [
+      new HttpInstrumentation(),
+      new ExpressInstrumentation(),
+    ],
+  });
+  // Exportador sencillo a consola (puede cambiarse a OTLP)
+  (sdk as any)._tracerProvider.addSpanProcessor(new SimpleSpanProcessor(new ConsoleSpanExporter()));
+  sdk.start();
+} catch {}
+
   dotenv.config();
 
   const app = express();
@@ -55,6 +85,17 @@ import { interceptorMiddleware, errorInterceptorMiddleware } from "./interceptor
   /* 2. Proxys REST */
   registerRoutes(app);
 
+  // 3. Food Aid minimal CRUDs (opcional)
+  app.use('/food-aid', buildFoodAidRouter());
+  // 4. Cámaras (montar antes que IoT para evitar middleware globales en /api)
+  const camRouter = buildCamerasRouter();
+  app.use('/iot', camRouter);
+  app.use('/api', camRouter);
+  // 5. IoT Agrotech CRUDs
+  const iotRouter = buildIotRouter();
+  app.use('/iot', iotRouter);
+  app.use('/api', iotRouter); // alias REST según requerimiento
+
   // Middleware específico para manejar errores de GraphQL
   app.use('/graphql', (err: any, req: any, res: any, next: any) => {
     console.error('❌ Error en GraphQL middleware:', {
@@ -86,7 +127,7 @@ import { interceptorMiddleware, errorInterceptorMiddleware } from "./interceptor
   // Middleware de manejo de errores - DEBE ir al final
   app.use(errorInterceptorMiddleware);
 
-  const port = process.env.GATEWAY_PORT || 4000;
+  const port = process.env.GATEWAY_PORT || 8088;
   const wsPort = process.env.WEBSOCKET_PORT || port;
   
   const allServices = getAllServices();
@@ -110,6 +151,7 @@ import { interceptorMiddleware, errorInterceptorMiddleware } from "./interceptor
   ║ 🔗 RUTAS ÚTILES:                                            ║
   ║ 📋 Info módulos: http://localhost:${port}/gateway/info            ║
   ║ 💚 Health check: http://localhost:${port}/gateway/health          ║
+  ║ 🟢 Readiness:    http://localhost:${port}/gateway/readiness       ║
   ║ 🚀 GraphQL:      http://localhost:${port}/graphql                ║
   ║ 📊 WS Stats:     http://localhost:${port}/gateway/websocket/stats ║
   ║ �️  WS Client:    http://localhost:${port}/gateway/websocket/client║

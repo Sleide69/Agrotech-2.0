@@ -117,6 +117,10 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+// Endpoints de salud simples para integración con el gateway
+app.MapGet("/health", () => Results.Json(new { status = "ok" }));
+app.MapGet("/readiness", () => Results.Json(new { ready = true }));
+
 app.Run();
 
 // Necesario para pruebas de integración

@@ -6,6 +6,17 @@ use App\Http\Controllers\Api\NotificacionController;
 use App\Http\Controllers\DeteccionController;
 use App\Http\Controllers\CapturaController;
 
+// Health/Readiness
+Route::get('/health', fn() => response()->json(['status' => 'ok']));
+Route::get('/readiness', function() {
+    try {
+        \DB::select('select 1');
+        return response()->json(['ready' => true]);
+    } catch (\Throwable $e) {
+        return response()->json(['ready' => false, 'error' => $e->getMessage()], 503);
+    }
+});
+
 // 🔐 Autenticación JWT (usado desde tu frontend JS)
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/register', [AuthController::class, 'register']);

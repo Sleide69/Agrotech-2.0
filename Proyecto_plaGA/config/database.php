@@ -16,7 +16,7 @@ return [
     |
     */
 
-    'default' => env('DB_CONNECTION', 'sqlite'),
+    'default' => env('DB_CONNECTION', 'pgsql'),
 
     /*
     |--------------------------------------------------------------------------
@@ -62,10 +62,10 @@ return [
             ]) : [],
         ],
 
-        'mariadb' => [
+    'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),
-            'host' => env('DB_HOST',),
+            'host' => env('DB_HOST', 'db'),
             'port' => env('DB_PORT', '3306'),
             'database' => env('DB_DATABASE', 'laravel'),
             'username' => env('DB_USERNAME', 'root'),
@@ -82,14 +82,14 @@ return [
             ]) : [],
         ],
 
-        'pgsql' => [
+    'pgsql' => [
             'driver' => 'pgsql',
             'url' => env('DB_URL'),
-            'host' => env('DB_HOST', ),
+            'host' => env('DB_HOST', 'db'),
             'port' => env('DB_PORT', '5432'),
-            'database' => env('DB_DATABASE', 'forge'),//'laravel'),
-            'username' => env('DB_USERNAME','forge'),// 'root'),
-            'password' => env('DB_PASSWORD', 'Emelec123*'),
+            'database' => env('DB_DATABASE', 'postgres'),
+            'username' => env('DB_USERNAME', 'postgres'),
+            'password' => env('DB_PASSWORD', ''),
             'charset' => env('DB_CHARSET', 'utf8'),
             'prefix' => '',
             'prefix_indexes' => true,
@@ -151,18 +151,18 @@ return [
             'persistent' => env('REDIS_PERSISTENT', false),
         ],
 
-        'default' => [
+    'default' => [
             'url' => env('REDIS_URL'),
-            'host' => env('REDIS_HOST', ),
+            'host' => env('REDIS_HOST', 'redis'),
             'username' => env('REDIS_USERNAME'),
             'password' => env('REDIS_PASSWORD'),
             'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_DB', '0'),
         ],
 
-        'cache' => [
+    'cache' => [
             'url' => env('REDIS_URL'),
-            'host' => env('REDIS_HOST', ),
+            'host' => env('REDIS_HOST', 'redis'),
             'username' => env('REDIS_USERNAME'),
             'password' => env('REDIS_PASSWORD'),
             'port' => env('REDIS_PORT', '6379'),

@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     # Usuario demo (en producción esto debe venir de BD)
     DEMO_USERNAME: str = os.getenv("DEMO_USERNAME", "admin")
     DEMO_PASSWORD: str = os.getenv("DEMO_PASSWORD", "admin123")
+
+    # MQTT
+    MQTT_BROKER_URL: str = os.getenv("MQTT_BROKER_URL", "mqtt://localhost:1883")
+    MQTT_USERNAME: Optional[str] = os.getenv("MQTT_USERNAME")
+    MQTT_PASSWORD: Optional[str] = os.getenv("MQTT_PASSWORD")
+    SENSOR_API_KEY_SALT: str = os.getenv("SENSOR_API_KEY_SALT", "changeme")
     
     def __init__(self):
         # Para compatibilidad con versiones de Pydantic

@@ -1,4 +1,5 @@
-import express, { Express, Request, Response } from "express";
+import express, { Express, Request, Response, NextFunction } from "express";
+import fetch from "cross-fetch";
 import { ClientRequest, IncomingMessage, ServerResponse } from "http";
 import { createProxyMiddleware, Options } from "http-proxy-middleware";
 import { verifyJWT } from "./auth";
@@ -58,13 +59,13 @@ function identifySourceModule(req: Request): { name: string; evidence: string } 
 
   // 4. Análisis de User-Agent para detectar servicios conocidos
   if (userAgent.includes('java') || userAgent.includes('Apache-HttpClient') || userAgent.includes('okhttp')) {
-    return { name: 'cultivo-manager', evidence: 'User-Agent (Java/Spring Boot)' };
+    return { name: 'cultivo-service', evidence: 'User-Agent (Java/Spring Boot)' };
   }
   if (userAgent.includes('node') || userAgent.includes('axios') || userAgent.includes('fetch')) {
     return { name: 'clima-service', evidence: 'User-Agent (Node.js)' };
   }
   if (userAgent.includes('PHP') || userAgent.includes('GuzzleHttp') || userAgent.includes('curl')) {
-    return { name: 'plaga-detection', evidence: 'User-Agent (PHP/Laravel)' };
+    return { name: 'plaga-service', evidence: 'User-Agent (PHP/Laravel)' };
   }
   if (userAgent.includes('python') || userAgent.includes('requests') || userAgent.includes('httpx') || userAgent.includes('FastAPI') || userAgent.includes('Flask')) {
     // Distinguir entre sensor-service, ia-evaluacion y vision-detection por puerto si es posible
@@ -106,9 +107,9 @@ function identifySourceModule(req: Request): { name: string; evidence: string } 
   }
 
   // 7. Análisis de Referer
-  if (referer.includes(':8080')) return { name: 'cultivo-manager', evidence: 'Referer puerto 8080' };
+  if (referer.includes(':8080')) return { name: 'cultivo-service', evidence: 'Referer puerto 8080' };
   if (referer.includes(':3000')) return { name: 'clima-service', evidence: 'Referer puerto 3000' };
-  if (referer.includes(':8000')) return { name: 'plaga-detection', evidence: 'Referer puerto 8000' };
+  if (referer.includes(':8000')) return { name: 'plaga-service', evidence: 'Referer puerto 8000' };
   if (referer.includes(':6060')) return { name: 'sensor-service', evidence: 'Referer puerto 6060' };
   if (referer.includes(':5197')) return { name: 'export-module', evidence: 'Referer puerto 5197' };
   if (referer.includes(':3200')) return { name: 'ia-evaluacion', evidence: 'Referer puerto 3200' };
@@ -132,9 +133,9 @@ function identifySourceModule(req: Request): { name: string; evidence: string } 
  */
 function getModuleByPort(port: number): string | null {
   const portToModuleMap: Record<number, string> = {
-    8080: 'cultivo-manager',
+  8080: 'cultivo-service',
     3000: 'clima-service',
-    8000: 'plaga-detection', 
+  8000: 'plaga-service', 
     6060: 'sensor-service',
     5197: 'export-module',
     3200: 'ia-evaluacion',
@@ -202,6 +203,32 @@ export function registerRoutes(app: Express): void {
   // Aplicar el middleware de identificación de módulos a todas las rutas
   app.use(moduleIdentifierMiddleware);
 
+  // Circuit breaker simple en memoria por servicio
+  const failures: Record<string, { count: number; openedAt?: number }> = {};
+  const THRESHOLD = 3; // 3 fallos
+  const OPEN_MS = 15_000; // 15s
+  const keyFor = (name: string) => name;
+  const recordFailure = (name: string) => {
+    const k = keyFor(name);
+    failures[k] = failures[k] || { count: 0 };
+    failures[k].count++;
+    if (failures[k].count >= THRESHOLD) failures[k].openedAt = Date.now();
+  };
+  const recordSuccess = (name: string) => {
+    const k = keyFor(name);
+    failures[k] = { count: 0 };
+  };
+  const isOpen = (name: string) => {
+    const f = failures[keyFor(name)];
+    if (!f?.openedAt) return false;
+    if (Date.now() - f.openedAt! > OPEN_MS) {
+      // half-open, permitir un intento
+      failures[keyFor(name)] = { count: THRESHOLD - 1 };
+      return false;
+    }
+    return true;
+  };
+
   /* ════════════════════
      RUTA DE INFORMACIÓN DEL GATEWAY
   ══════════════════════ */
@@ -230,21 +257,80 @@ export function registerRoutes(app: Express): void {
     });
   });
 
-  app.get("/gateway/health", (req: Request, res: Response) => {
+  app.get("/gateway/health", async (_req: Request, res: Response) => {
+    const checks = await Promise.all(
+      Object.entries(services).map(async ([name, cfg]) => {
+  const url = `${cfg.base_url}${name === 'plaga-service' ? '/api/health' : '/health'}`;
+        let ok = false; let status = 0; let error: string | undefined;
+        try {
+          const resp = await fetch(url, { method: 'GET', headers: { 'accept': 'application/json' }, redirect: 'manual' as any });
+          status = resp.status;
+          ok = resp.ok;
+        } catch (e: any) {
+          error = e.message;
+        }
+        return { name, url, ok, status, error, breakerOpen: isOpen(name) };
+      })
+    );
     res.json({
-      status: "healthy",
+      status: 'healthy',
       timestamp: new Date().toISOString(),
-      gateway: {
-        port: process.env.GATEWAY_PORT || 4000,
-        version: "1.0.0"
-      },
-      modules: Object.entries(services).map(([name, config]) => ({
-        name,
-        port: config.port,
-        baseUrl: config.base_url
-      }))
+      gateway: { port: process.env.GATEWAY_PORT || 4000, version: '1.0.0' },
+      checks
     });
   });
+
+  app.get("/gateway/readiness", async (_req: Request, res: Response) => {
+    const results = await Promise.all(
+      Object.entries(services).map(async ([name, cfg]) => {
+        try {
+          const resp = await fetch(`${cfg.base_url}${name === 'plaga-service' ? '/api/health' : '/health'}`);
+          return resp.ok;
+        } catch { return false; }
+      })
+    );
+    const ready = results.every(Boolean);
+    res.status(ready ? 200 : 503).json({ ready, services: results.length });
+  });
+
+  // Endpoints públicos de salud/readiness para cada servicio a través del gateway
+  // Cultivo-Service
+  app.get(
+    "/cultivo/health",
+    createProxyMiddleware({
+  target: services["cultivo-service"].base_url,
+      changeOrigin: true,
+      pathRewrite: { "^/cultivo/health": "/health" },
+    } as Options)
+  );
+  app.get(
+    "/cultivo/readiness",
+    createProxyMiddleware({
+  target: services["cultivo-service"].base_url,
+      changeOrigin: true,
+      pathRewrite: { "^/cultivo/readiness": "/readiness" },
+    } as Options)
+  );
+
+  // Plaga (Laravel)
+  app.get(
+    "/plaga/api/health",
+    createProxyMiddleware({
+  target: services["plaga-service"].base_url,
+      changeOrigin: true,
+      pathRewrite: { "^/plaga/api/health": "/api/health" },
+    } as Options)
+  );
+
+  // Sensor-Service
+  app.get(
+    "/sensor/health",
+    createProxyMiddleware({
+      target: services["sensor-service"].base_url,
+      changeOrigin: true,
+      pathRewrite: { "^/sensor/health": "/health" },
+    } as Options)
+  );
 
   // Nueva ruta para servir el cliente WebSocket
   app.get("/gateway/websocket/client", (req: Request, res: Response) => {
@@ -321,25 +407,43 @@ export function registerRoutes(app: Express): void {
      CULTIVO-MANAGER
      (Spring Boot) – todo protegido
   ══════════════════════ */
+  // Rutas de negocio de cultivo protegidas con JWT
   app.use(
     "/cultivo",
-    verifyJWT,
+    (req: Request, res: Response, next: NextFunction) => {
+      // Permitir salud/readiness siempre
+      if (req.path === "/health" || req.path === "/readiness") return next();
+      // Permitir GET públicos de sensores en modo dev si ALLOW_PUBLIC_SENSORS=true
+      const allowPublic = process.env.ALLOW_PUBLIC_SENSORS === 'true';
+      const isPublicSensorGet = allowPublic && req.method === 'GET' && (
+        req.path === "/api/sensores" ||
+        /^\/api\/sensores\/[^\/]+\/ultimas-lecturas$/.test(req.path)
+      );
+      if (isPublicSensorGet) return next();
+      if (isOpen('cultivo-service')) return res.status(503).json({ error: 'Circuit open' });
+      return verifyJWT(req, res, next);
+    },
     createProxyMiddleware({
-      target: services["cultivo-manager"].base_url,
+      target: services["cultivo-service"].base_url,
       changeOrigin: true,
       pathRewrite: { "^/cultivo": "" },
       onProxyReq(proxyReq: ClientRequest, req: Request) {
+  // Propagar correlation-id
+  const cid = (req as any).correlationId || req.get('x-correlation-id');
+  if (cid) proxyReq.setHeader('x-correlation-id', cid);
         const sourceInfo = (req as any).sourceModule;
         const sourceText = sourceInfo ? `${sourceInfo.name} (${sourceInfo.evidence})` : 'desconocido';
-        console.log(`🔄 [${sourceText} → CULTIVO-MANAGER:${services["cultivo-manager"].port}] Enviando: ${req.method} ${req.originalUrl} → ${services["cultivo-manager"].base_url}${req.url}`);
+        console.log(`🔄 [${sourceText} → CULTIVO-SERVICE:${services["cultivo-service"].port}] Enviando: ${req.method} ${req.originalUrl} → ${services["cultivo-service"].base_url}${req.url}`);
       },
       onProxyRes(proxyRes: IncomingMessage, req: Request) {
         const sourceInfo = (req as any).sourceModule;
         const sourceText = sourceInfo ? sourceInfo.name : 'desconocido';
-        console.log(`✅ [${sourceText} → CULTIVO-MANAGER:${services["cultivo-manager"].port}] Respuesta: ${proxyRes.statusCode} para ${req.method} ${req.originalUrl}`);
+        console.log(`✅ [${sourceText} → CULTIVO-SERVICE:${services["cultivo-service"].port}] Respuesta: ${proxyRes.statusCode} para ${req.method} ${req.originalUrl}`);
+        recordSuccess('cultivo-service');
       },
       onError(err: Error, req: IncomingMessage, res: ServerResponse) {
-        console.error(`❌ [CULTIVO-MANAGER:${services["cultivo-manager"].port}] Error:`, err.message);
+        console.error(`❌ [CULTIVO-SERVICE:${services["cultivo-service"].port}] Error:`, err.message);
+        recordFailure('cultivo-service');
         res.writeHead(502).end("Gateway error");
       },
     } as Options)
@@ -351,7 +455,7 @@ export function registerRoutes(app: Express): void {
   ══════════════════════ */
   app.use(
     "/clima",
-    (req: Request, res: Response, next) => {
+  (req: Request, res: Response, next: any) => {
       // Solo exige JWT si NO es /api/auth/login
       if (!req.path.startsWith("/api/auth/login")) {
         return verifyJWT(req, res, next);
@@ -364,6 +468,8 @@ export function registerRoutes(app: Express): void {
       pathRewrite: { "^/clima": "" }, // → /api/auth/login, /consulta-clima, etc.
       logLevel: "debug",
       onProxyReq(proxyReq: ClientRequest, r: Request) {
+  const cid = (r as any).correlationId || r.get('x-correlation-id');
+  if (cid) proxyReq.setHeader('x-correlation-id', cid);
         const sourceInfo = (r as any).sourceModule;
         const sourceText = sourceInfo ? `${sourceInfo.name} (${sourceInfo.evidence})` : 'desconocido';
         console.log(`🔄 [${sourceText} → CLIMA-SERVICE:${services["clima-service"].port}] Enviando: ${r.method} ${r.originalUrl} → ${services["clima-service"].base_url}${r.url}`);
@@ -372,9 +478,11 @@ export function registerRoutes(app: Express): void {
         const sourceInfo = (req as any).sourceModule;
         const sourceText = sourceInfo ? sourceInfo.name : 'desconocido';
         console.log(`✅ [${sourceText} → CLIMA-SERVICE:${services["clima-service"].port}] Respuesta: ${proxyRes.statusCode} para ${req.method} ${req.originalUrl}`);
+        recordSuccess('clima-service');
       },
       onError(err: Error, _req: IncomingMessage, res: ServerResponse) {
         console.error(`❌ [CLIMA-SERVICE:${services["clima-service"].port}] Error:`, err.message);
+        recordFailure('clima-service');
         res.writeHead(502).end("Gateway error");
       },
     } as Options)
@@ -388,17 +496,19 @@ export function registerRoutes(app: Express): void {
   app.post(
     "/plaga/login",
     createProxyMiddleware({
-      target: services["plaga-detection"].base_url,
+      target: services["plaga-service"].base_url,
       changeOrigin: true,
       pathRewrite: { "^/plaga/login": "/api/login" }, // 👈 convierte a /api/login
       onProxyReq(proxyReq: ClientRequest, req: Request) {
-        console.log(`🔄 [PLAGA-DETECTION:${services["plaga-detection"].port}] Login: ${req.method} ${req.originalUrl} → ${services["plaga-detection"].base_url}/api/login`);
+  const cid = (req as any).correlationId || req.get('x-correlation-id');
+  if (cid) proxyReq.setHeader('x-correlation-id', cid);
+        console.log(`🔄 [PLAGA-SERVICE:${services["plaga-service"].port}] Login: ${req.method} ${req.originalUrl} → ${services["plaga-service"].base_url}/api/login`);
       },
       onProxyRes(proxyRes: IncomingMessage, req: Request) {
-        console.log(`✅ [PLAGA-DETECTION:${services["plaga-detection"].port}] Login respuesta: ${proxyRes.statusCode}`);
+        console.log(`✅ [PLAGA-SERVICE:${services["plaga-service"].port}] Login respuesta: ${proxyRes.statusCode}`);
       },
       onError(err: Error, req: IncomingMessage, res: ServerResponse) {
-        console.error(`❌ [PLAGA-DETECTION:${services["plaga-detection"].port}] Login error:`, err.message);
+        console.error(`❌ [PLAGA-SERVICE:${services["plaga-service"].port}] Login error:`, err.message);
         res.writeHead(502).end("Gateway error");
       },
     } as Options)
@@ -407,17 +517,19 @@ export function registerRoutes(app: Express): void {
   app.post(
     "/plaga/register",
     createProxyMiddleware({
-      target: services["plaga-detection"].base_url,
+      target: services["plaga-service"].base_url,
       changeOrigin: true,
       pathRewrite: { "^/plaga/register": "/api/register" }, // /api/register
       onProxyReq(proxyReq: ClientRequest, req: Request) {
-        console.log(`🔄 [PLAGA-DETECTION:${services["plaga-detection"].port}] Register: ${req.method} ${req.originalUrl} → ${services["plaga-detection"].base_url}/api/register`);
+  const cid = (req as any).correlationId || req.get('x-correlation-id');
+  if (cid) proxyReq.setHeader('x-correlation-id', cid);
+        console.log(`🔄 [PLAGA-SERVICE:${services["plaga-service"].port}] Register: ${req.method} ${req.originalUrl} → ${services["plaga-service"].base_url}/api/register`);
       },
       onProxyRes(proxyRes: IncomingMessage, req: Request) {
-        console.log(`✅ [PLAGA-DETECTION:${services["plaga-detection"].port}] Register respuesta: ${proxyRes.statusCode}`);
+        console.log(`✅ [PLAGA-SERVICE:${services["plaga-service"].port}] Register respuesta: ${proxyRes.statusCode}`);
       },
       onError(err: Error, req: IncomingMessage, res: ServerResponse) {
-        console.error(`❌ [PLAGA-DETECTION:${services["plaga-detection"].port}] Register error:`, err.message);
+        console.error(`❌ [PLAGA-SERVICE:${services["plaga-service"].port}] Register error:`, err.message);
         res.writeHead(502).end("Gateway error");
       },
     } as Options)
@@ -426,23 +538,50 @@ export function registerRoutes(app: Express): void {
   /* ─── Rutas protegidas ─────────────────────────────── */
   app.use(
     "/plaga",
-    verifyJWT,
+    (req: Request, res: Response, next: NextFunction) => {
+      if (req.path === "/api/health" || req.path === "/api/readiness" || req.path === "/health" || req.path === "/readiness") return next();
+      if (isOpen('plaga-service')) return res.status(503).json({ error: 'Circuit open' });
+      return verifyJWT(req, res, next);
+    },
     createProxyMiddleware({
-      target: services["plaga-detection"].base_url,
+      target: services["plaga-service"].base_url,
       changeOrigin: true,
       pathRewrite: { "^/plaga": "" }, // /plaga/api/... → /api/...
       onProxyReq(proxyReq: ClientRequest, req: Request) {
-        console.log(`🔄 [PLAGA-DETECTION:${services["plaga-detection"].port}] Enviando: ${req.method} ${req.originalUrl} → ${services["plaga-detection"].base_url}${req.url}`);
+  const cid = (req as any).correlationId || req.get('x-correlation-id');
+  if (cid) proxyReq.setHeader('x-correlation-id', cid);
+        console.log(`🔄 [PLAGA-SERVICE:${services["plaga-service"].port}] Enviando: ${req.method} ${req.originalUrl} → ${services["plaga-service"].base_url}${req.url}`);
       },
       onProxyRes(proxyRes: IncomingMessage, req: Request) {
-        console.log(`✅ [PLAGA-DETECTION:${services["plaga-detection"].port}] Respuesta: ${proxyRes.statusCode} para ${req.method} ${req.originalUrl}`);
+        console.log(`✅ [PLAGA-SERVICE:${services["plaga-service"].port}] Respuesta: ${proxyRes.statusCode} para ${req.method} ${req.originalUrl}`);
+    recordSuccess('plaga-service');
       },
       onError(err: Error, req: IncomingMessage, res: ServerResponse) {
-        console.error(`❌ [PLAGA-DETECTION:${services["plaga-detection"].port}] Error:`, err.message);
+        console.error(`❌ [PLAGA-SERVICE:${services["plaga-service"].port}] Error:`, err.message);
+    recordFailure('plaga-service');
         res.writeHead(502).end("Gateway error");
       },
     } as Options)
   );
+
+  // ── Endpoints públicos de sensores (solo dev) ─────────────────────────
+  app.get("/sensores", (req: Request, res: Response, next: NextFunction) => {
+    if (process.env.ALLOW_PUBLIC_SENSORS === 'true') return next();
+    return res.status(401).json({ error: 'Token requerido' });
+  }, createProxyMiddleware({
+    target: services["cultivo-service"].base_url,
+    changeOrigin: true,
+    pathRewrite: { "^/sensores": "/api/sensores" },
+  } as Options));
+
+  app.get("/sensores/:id/ultimas-lecturas", (req: Request, res: Response, next: NextFunction) => {
+    if (process.env.ALLOW_PUBLIC_SENSORS === 'true') return next();
+    return res.status(401).json({ error: 'Token requerido' });
+  }, createProxyMiddleware({
+    target: services["cultivo-service"].base_url,
+    changeOrigin: true,
+    pathRewrite: { "^/sensores": "/api/sensores" },
+  } as Options));
 
   /* ═════════ SENSOR-SERVICE (FastAPI) ═════════ */
 
@@ -472,7 +611,11 @@ export function registerRoutes(app: Express): void {
   /* 2. Resto de rutas: protegidas */
   app.use(
     "/sensor",
-    verifyJWT, // ← aquí sí validas token
+    (req: Request, res: Response, next: NextFunction) => {
+      if (req.path === "/health" || req.path === "/readiness") return next();
+      if (isOpen('sensor-service')) return res.status(503).json({ error: 'Circuit open' });
+      return verifyJWT(req, res, next);
+    }, // ← validas token
     createProxyMiddleware({
       target: services["sensor-service"].base_url,
       changeOrigin: true,
@@ -482,9 +625,11 @@ export function registerRoutes(app: Express): void {
       },
       onProxyRes(proxyRes: IncomingMessage, req: Request) {
         console.log(`✅ [SENSOR-SERVICE:${services["sensor-service"].port}] Respuesta: ${proxyRes.statusCode} para ${req.method} ${req.originalUrl}`);
+    recordSuccess('sensor-service');
       },
       onError(err: Error, req: IncomingMessage, res: ServerResponse) {
         console.error(`❌ [SENSOR-SERVICE:${services["sensor-service"].port}] Error:`, err.message);
+    recordFailure('sensor-service');
         res.writeHead(502).end("Gateway error");
       },
     } as Options)
@@ -514,7 +659,7 @@ export function registerRoutes(app: Express): void {
   );
   app.use(
     "/export",
-    verifyJWT,
+  async (req: Request, res: Response, next: NextFunction) => { if (isOpen('export-module')) return res.status(503).json({ error: 'Circuit open' }); return verifyJWT(req, res, next); },
     createProxyMiddleware({
       target: services["export-module"].base_url,
       changeOrigin: true,
@@ -524,9 +669,11 @@ export function registerRoutes(app: Express): void {
       },
       onProxyRes(proxyRes: IncomingMessage, req: Request) {
         console.log(`✅ [EXPORT-MODULE:${services["export-module"].port}] Respuesta: ${proxyRes.statusCode} para ${req.method} ${req.originalUrl}`);
+    recordSuccess('export-module');
       },
       onError(err: Error, req: IncomingMessage, res: ServerResponse) {
         console.error(`❌ [EXPORT-MODULE:${services["export-module"].port}] Error:`, err.message);
+    recordFailure('export-module');
         res.writeHead(502).end("Gateway error");
       },
     } as Options)
@@ -538,7 +685,7 @@ export function registerRoutes(app: Express): void {
   ══════════════════════ */
   app.use(
     "/ia",
-    // verifyJWT,
+  // verifyJWT,
     createProxyMiddleware({
       target: services["ia-evaluacion"].base_url, // http://localhost:3200
       changeOrigin: true,
@@ -553,9 +700,11 @@ export function registerRoutes(app: Express): void {
         const sourceInfo = (req as any).sourceModule;
         const sourceText = sourceInfo ? sourceInfo.name : 'desconocido';
         console.log(`✅ [${sourceText} → IA-EVALUACION:${services["ia-evaluacion"].port}] Respuesta: ${proxyRes.statusCode} para ${req.method} ${req.originalUrl}`);
+        recordSuccess('ia-evaluacion');
       },
       onError(err: Error, _req: IncomingMessage, res: ServerResponse) {
         console.error(`❌ [IA-EVALUACION:${services["ia-evaluacion"].port}] Error:`, err.message);
+        recordFailure('ia-evaluacion');
         res.writeHead(502).end("Gateway error");
       },
     } as Options)
@@ -567,7 +716,7 @@ export function registerRoutes(app: Express): void {
   ══════════════════════ */
   app.use(
     "/vision",
-    // Sin autenticación JWT por ahora, pero se puede agregar si es necesario
+  // Sin autenticación JWT por ahora, pero se puede agregar si es necesario
     createProxyMiddleware({
       target: services["vision-detection"].base_url, // http://localhost:5000
       changeOrigin: true,
@@ -581,9 +730,11 @@ export function registerRoutes(app: Express): void {
         const sourceInfo = (req as any).sourceModule;
         const sourceText = sourceInfo ? sourceInfo.name : 'desconocido';
         console.log(`✅ [${sourceText} → VISION-DETECTION:${services["vision-detection"].port}] Respuesta: ${proxyRes.statusCode} para ${req.method} ${req.originalUrl}`);
+        recordSuccess('vision-detection');
       },
       onError(err: Error, _req: IncomingMessage, res: ServerResponse) {
         console.error(`❌ [VISION-DETECTION:${services["vision-detection"].port}] Error:`, err.message);
+        recordFailure('vision-detection');
         res.writeHead(502).end("Gateway error");
       },
     } as Options)

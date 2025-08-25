@@ -187,9 +187,9 @@ function identifyTargetService(url: string): string | undefined {
   const serviceRoute = pathSegments[0];
   
   const serviceMap: Record<string, string> = {
-    'cultivo': 'cultivo-manager',
+  'cultivo': 'cultivo-service',
     'clima': 'clima-service',
-    'plaga': 'plaga-detection',
+  'plaga': 'plaga-service',
     'sensor': 'sensor-service',
     'export': 'export-module',
     'ia': 'ia-evaluacion',

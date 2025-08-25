@@ -7,6 +7,13 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/instrumentation-express": "^0.52.0",
+    "@opentelemetry/instrumentation-http": "^0.203.0",
+    "@opentelemetry/resources": "^2.0.1",
+    "@opentelemetry/sdk-node": "^0.203.0",
+    "@opentelemetry/sdk-trace-base": "^2.0.1",
+    "@opentelemetry/semantic-conventions": "^1.36.0",
     "@types/ws": "^8.18.1",
     "apollo-server-express": "^3.13.0",
     "body-parser": "^1.20.3",
@@ -17,13 +24,16 @@
     "graphql": "^16.11.0",
     "graphql-tag": "^2.12.6",
     "http-proxy-middleware": "^3.0.0",
+    "jose": "^5.9.3",
     "jsonwebtoken": "^9.0.2",
+  "pg": "^8.12.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {
     "@types/express": "^4.17.23",
     "@types/graphql": "^14.2.3",
     "@types/jsonwebtoken": "^9.0.2",
+  "@types/pg": "^8.11.6",
     "@types/node": "^20.19.9",
     "nodemon": "^3.1.0",
     "ts-node": "^10.9.2",

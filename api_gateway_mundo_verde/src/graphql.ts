@@ -115,7 +115,7 @@ export async function mountGraphQL(app: express.Application) {
         try {
           console.log('Obteniendo notificaciones de plagas con token:', token.substring(0, 20) + '...');
           
-          const response = await fetch(`${services["plaga-detection"].base_url}/api/notificaciones`, {
+          const response = await fetch(`${services["plaga-service"].base_url}/api/notificaciones`, {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -151,7 +151,7 @@ export async function mountGraphQL(app: express.Application) {
         try {
           console.log('Obteniendo detecciones de plagas con token:', token.substring(0, 20) + '...');
           
-          const response = await fetch(`${services["plaga-detection"].base_url}/api/deteccion`, {
+          const response = await fetch(`${services["plaga-service"].base_url}/api/deteccion`, {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -413,7 +413,7 @@ export async function mountGraphQL(app: express.Application) {
         try {
           console.log('Intentando login en módulo de plagas:', email);
           
-          const response = await fetch(`${services["plaga-detection"].base_url}/api/login`, {
+          const response = await fetch(`${services["plaga-service"].base_url}/api/login`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -459,7 +459,7 @@ export async function mountGraphQL(app: express.Application) {
         try {
           console.log('Registrando usuario en módulo de plagas:', name);
           
-          const response = await fetch(`${services["plaga-detection"].base_url}/api/register`, {
+          const response = await fetch(`${services["plaga-service"].base_url}/api/register`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -557,7 +557,7 @@ export async function mountGraphQL(app: express.Application) {
         try {
           console.log('Realizando detección de plagas con imagen:', imagenUrl);
           
-          const response = await fetch(`${services["plaga-detection"].base_url}/api/deteccion`, {
+          const response = await fetch(`${services["plaga-service"].base_url}/api/deteccion`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -594,7 +594,7 @@ export async function mountGraphQL(app: express.Application) {
         try {
           console.log('Capturando imagen desde dispositivo:', dispositivo);
           
-          const response = await fetch(`${services["plaga-detection"].base_url}/api/captura`, {
+          const response = await fetch(`${services["plaga-service"].base_url}/api/captura`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,

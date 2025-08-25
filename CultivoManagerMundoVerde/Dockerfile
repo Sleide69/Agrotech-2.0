@@ -1,14 +1,13 @@
-# Usa JDK 17 con imagen ligera
-FROM eclipse-temurin:17-jdk-alpine
+## Etapa de build: compilar el JAR desde el código fuente
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /workspace
+COPY pom.xml ./
+COPY src ./src
+RUN mvn -q -DskipTests package
 
-# Crea y entra al directorio de trabajo dentro del contenedor
+## Etapa de runtime: imagen JRE ligera
+FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
-
-# Copia el JAR generado en la carpeta target
-COPY target/CultivoManager-0.0.1-SNAPSHOT.jar app.jar
-
-# Expone el puerto en el que la app escucha
-EXPOSE 8000
-
-# Comando para ejecutar la app
-ENTRYPOINT ["java", "-jar", "app.jar"]
+COPY --from=build /workspace/target/*.jar /app/app.jar
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

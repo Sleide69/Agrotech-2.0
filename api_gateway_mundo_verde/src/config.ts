@@ -1,6 +1,8 @@
+const env = (name: string, fallback: string) => process.env[name] || fallback;
+
 export const services = {
-  'cultivo-manager': {
-    base_url: 'http://localhost:8080',
+  'cultivo-service': {
+  base_url: env('CULTIVO_URL', 'http://cultivo-service:8080'),
     port: 8080,
     description: 'Spring Boot - Gestión de Cultivos',
     endpoints: [
@@ -12,7 +14,7 @@ export const services = {
     ],
   },
   'clima-service': {
-    base_url: 'http://localhost:3000',
+  base_url: env('CLIMA_URL', 'http://localhost:3000'),
     port: 3000,
     description: 'Node.js - Servicio de Clima',
     endpoints: [
@@ -22,8 +24,8 @@ export const services = {
       '/api/logs',
     ],
   },
-  'plaga-detection': {
-    base_url: 'http://localhost:8000',
+  'plaga-service': {
+  base_url: env('PLAGA_URL', 'http://plaga-service:8000'),
     port: 8000,
     description: 'Laravel - Detección de Plagas',
     endpoints: [
@@ -36,7 +38,7 @@ export const services = {
     ],
   },
   'sensor-service': {
-    base_url: 'http://localhost:6060',
+  base_url: env('SENSOR_URL', 'http://localhost:6060'),
     port: 6060,
     description: 'FastAPI - Servicio de Sensores',
     endpoints: [
@@ -48,7 +50,7 @@ export const services = {
     ],
   },
   'export-module': {
-    base_url: 'http://localhost:5197',
+  base_url: env('EXPORT_URL', 'http://localhost:5197'),
     port: 5197,
     description: '.NET - Módulo de Exportación',
     endpoints: [
@@ -60,7 +62,7 @@ export const services = {
     ],
   },
   'ia-evaluacion': {
-    base_url: 'http://localhost:3200',
+  base_url: env('IA_URL', 'http://localhost:3200'),
     port: 3200,
     description: 'FastAPI - Evaluación con IA',
     endpoints: [
@@ -69,7 +71,7 @@ export const services = {
     ],
   },
   'vision-detection': {
-    base_url: 'http://localhost:5000',
+  base_url: env('VISION_URL', 'http://localhost:5000'),
     port: 5000,
     description: 'Flask - Detección de Imágenes con YOLO',
     endpoints: [
@@ -91,9 +93,9 @@ export function getServiceByPath(path: string): { name: string; service: typeof 
   const serviceRoute = pathSegments[0];
   
   const serviceMap: Record<string, keyof typeof services> = {
-    'cultivo': 'cultivo-manager',
+  'cultivo': 'cultivo-service',
     'clima': 'clima-service',
-    'plaga': 'plaga-detection',
+  'plaga': 'plaga-service',
     'sensor': 'sensor-service',
     'export': 'export-module',
     'ia': 'ia-evaluacion',

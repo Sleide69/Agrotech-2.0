@@ -26,3 +26,4 @@ ipython==8.17.2
 
 # Optional for enhanced shell
 ipdb==0.13.13
+paho-mqtt==2.1.0

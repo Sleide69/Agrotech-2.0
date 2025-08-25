@@ -34,9 +34,9 @@ USER app
 # Exponer el puerto
 EXPOSE 6060
 
-# Crear el script de entrada
+# Crear el script de entrada y normalizar fin de línea (CRLF→LF)
 COPY --chown=app:app docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh
 
 # Comando por defecto
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
